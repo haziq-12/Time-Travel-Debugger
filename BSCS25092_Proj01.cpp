@@ -12,8 +12,8 @@
 #include <string>
 #include <cstdint>
 #include <fstream>
-#include <unistd.h>
-#include <sys/socket.h>
+// #include <unistd.h>
+// #include <sys/socket.h>
 #include <cstdint>
 #include <cstdio>
 using namespace std;
@@ -46,35 +46,73 @@ public:
     // Implement these functions:
     Stack()
     { // initialize the stack
+        top = nullptr;
+        count = 0;
     }
+
+    ~Stack()
+    {
+        while (!isEmpty())
+        {
+            pop();
+        }
+    }
+
     void push(const T &val)
     {
-
         // pushes the value on the stack if max limit is not reached yet.
+        Node *newNode = new Node(val, top);
+        top = newNode;
+        count++;
     }
+
     T pop()
     {
         // pop the top value on the stack
+        if (isEmpty())
+        {
+            return T();
+        }
+        Node *temp = top;
+        T val = temp->data;
+        top = top->next;
+        delete temp;
+        count--;
+        return val;
     }
+
     T &peek()
     {
         // returns the top value on the stack
+        return top->data;
     }
+
     bool isEmpty()
     {
+        return top == nullptr;
     }
+
     int32_t depth()
     {
+        return count;
     }
+
     int32_t snapshot_into(T out[], int32_t maxLen)
     {
         // copies every frame, top to bottom in the array given as a parameter
         // this is what buildSnapshot() call, returns count written
+        int32_t written = 0;
+        Node *curr = top;
+        while (curr != nullptr && written < maxLen)
+        {
+            out[written++] = curr->data;
+            curr = curr->next;
+        }
+        return written;
     }
 };
 
 
-// Timeline : doubly linked list of Snapshots
 struct Snapshot; // fwd declaration;
 struct TimelineNode
 {
@@ -91,16 +129,32 @@ public:
     // Implement these functions
     Timeline()
     {
+        head = nullptr;
+        tail = nullptr;
+        stepCount = 0;
     }
     void record(Snapshot *s)
     {
         // add record in the timeline
+        TimelineNode *n = new TimelineNode{s, nullptr, tail};
+        if (tail != nullptr)
+        {
+            tail->next = n;
+        }
+        else
+        {
+            head = n;
+        }
+        tail = n;
+        stepCount++;
     }
     TimelineNode *begin()
     {
+        return head;
     }
     int32_t getStepCount()
     {
+        return stepCount;
     }
 };
 
