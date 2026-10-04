@@ -9,3 +9,9 @@
 - **Message:** `feat: implement linked-list based Stack and Timeline classes`
 - **Stack Data Structure:** Built a **singly linked `Stack<T>`** (`push`, `pop`, `peek`, `snapshot_into`) to dynamically manage the **runtime call stack**.
 - **Timeline Data Structure:** Implemented a **doubly linked `Timeline`** (`head`, `tail`, `record`, `stepCount`) to store **execution state snapshots** sequentially.
+
+
+### **Commit 03: Complete Stage 0 Setup**
+- **Message:** `chore: add sample source.bin to complete Stage 0 receive mock`
+- **Stage 0 Setup:** Created the baseline **`source.bin`** file using the specification's **C-- demo program**[cite: 10, 11].
+- **Pipeline Integration:** Satisfied the **Stage 0 (Receive)** requirement to provide local source trace input for upcoming validation and execution passes[cite: 10, 11].
