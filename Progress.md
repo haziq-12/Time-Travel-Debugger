@@ -13,5 +13,5 @@
 
 ### **Commit 03: Complete Stage 0 Setup**
 - **Message:** `chore: add sample source.bin to complete Stage 0 receive mock`
-- **Stage 0 Setup:** Created the baseline **`source.bin`** file using the specification's **C-- demo program**[cite: 10, 11].
-- **Pipeline Integration:** Satisfied the **Stage 0 (Receive)** requirement to provide local source trace input for upcoming validation and execution passes[cite: 10, 11].
+- **Stage 0 Setup:** Created the baseline **`source.bin`** file using the specification's **C-- demo program**.
+- **Pipeline Integration:** Satisfied the **Stage 0 (Receive)** requirement to provide local source trace input for upcoming validation and execution passes.
