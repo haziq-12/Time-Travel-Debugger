@@ -9,11 +9,12 @@
 
 
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <cstdint>
 #include <fstream>
-#include <unistd.h>
-#include <sys/socket.h>
+// #include <unistd.h>
+// #include <sys/socket.h>
 #include <cstdint>
 #include <cstdio>
 using namespace std;
@@ -52,8 +53,7 @@ public:
 
     ~Stack()
     {
-        while (!isEmpty())
-        {
+        while (!isEmpty()) {
             pop();
         }
     }
@@ -69,8 +69,7 @@ public:
     T pop()
     {
         // pop the top value on the stack
-        if (isEmpty())
-        {
+        if (isEmpty()) {
             return T();
         }
         Node *temp = top;
@@ -103,8 +102,7 @@ public:
         // this is what buildSnapshot() call, returns count written
         int32_t written = 0;
         Node *curr = top;
-        while (curr != nullptr && written < maxLen)
-        {
+        while (curr != nullptr && written < maxLen) {
             out[written++] = curr->data;
             curr = curr->next;
         }
@@ -137,12 +135,10 @@ public:
     {
         // add record in the timeline
         TimelineNode *n = new TimelineNode{s, nullptr, tail};
-        if (tail != nullptr)
-        {
+        if (tail != nullptr) {
             tail->next = n;
         }
-        else
-        {
+        else {
             head = n;
         }
         tail = n;
@@ -211,18 +207,61 @@ struct PendingPatch
 bool readSourceLine(ifstream &in, string &out)
 {
     // reads the next nonblank line
+    while (getline(in, out)) {
+        if (!out.empty() && out.back() == '\r') {
+            out.pop_back();
+        }
+        if (!out.empty()) {
+            return true;
+        }
+    }
+    return false;
 }
 string firstWord(const string &line)
 {
     // returns first word from the input string
+    stringstream ss(line);
+    string s = "";
+    if (ss >> s) {
+        return s;
+    }
+    return s;
 }
 string secondWord(const string &line)
 {
     // returns the second word
+    stringstream ss(line);
+    string s1 = "", s2 = "";
+    if (ss >> s1 && ss >> s2) {
+        return s2;
+    }
+    return s2;
 }
 bool validateProgram(const char *sourcePath)
 {
     // for each func defined there should be exactly one func_end and no nested funcs allowed - 
+    ifstream fin(sourcePath);
+    if (!fin.is_open()) {
+        return false;
+    }
+    Stack<string> st;
+    string ln;
+    while (readSourceLine(fin, ln)) {
+        string s = firstWord(ln);
+        if (s == "func") {
+            if (!st.isEmpty()) {
+                return false;
+            }
+            st.push(secondWord(ln));
+        }
+        else if (s == "func_end") {
+            if (st.isEmpty()) {
+                return false;
+            }
+            st.pop();
+        }
+    }
+    return st.isEmpty();
 }
 
 // PASS 0x1: RESOLVE() -> resolve.bin
