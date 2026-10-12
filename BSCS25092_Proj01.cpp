@@ -13,10 +13,10 @@
 #include <string>
 #include <cstdint>
 #include <fstream>
-// #include <unistd.h>
-// #include <sys/socket.h>
-#include <cstdint>
+#include <unistd.h>
+#include <sys/socket.h>
 #include <cstdio>
+#include <cstdlib>
 using namespace std;
 
 // ---- Constants ----
@@ -44,9 +44,8 @@ class Stack
     int32_t count;
 
 public:
-    // Implement these functions:
     Stack()
-    { // initialize the stack
+    {
         top = nullptr;
         count = 0;
     }
@@ -61,14 +60,16 @@ public:
     void push(const T &val)
     {
         // pushes the value on the stack if max limit is not reached yet.
-        Node *newNode = new Node(val, top);
+        if (count >= MAX_STACK_DEPTH) {
+            return;
+        }
+        Node *newNode = new Node{val, top};
         top = newNode;
         count++;
     }
 
     T pop()
     {
-        // pop the top value on the stack
         if (isEmpty()) {
             return T();
         }
@@ -82,7 +83,6 @@ public:
 
     T &peek()
     {
-        // returns the top value on the stack
         return top->data;
     }
 
@@ -98,8 +98,6 @@ public:
 
     int32_t snapshot_into(T out[], int32_t maxLen)
     {
-        // copies every frame, top to bottom in the array given as a parameter
-        // this is what buildSnapshot() call, returns count written
         int32_t written = 0;
         Node *curr = top;
         while (curr != nullptr && written < maxLen) {
@@ -110,7 +108,7 @@ public:
     }
 };
 
-
+// Timeline : doubly linked list of Snapshots
 struct Snapshot; // fwd declaration;
 struct TimelineNode
 {
@@ -124,7 +122,6 @@ class Timeline
     int32_t stepCount;
 
 public:
-    // Implement these functions
     Timeline()
     {
         head = nullptr;
@@ -133,7 +130,6 @@ public:
     }
     void record(Snapshot *s)
     {
-        // add record in the timeline
         TimelineNode *n = new TimelineNode{s, nullptr, tail};
         if (tail != nullptr) {
             tail->next = n;
@@ -185,8 +181,8 @@ void writeHeader(FILE *f, const TTDBHeader &h)
 {
     fwrite(h.magic, 1, 4, f);
     fwrite(&h.version, sizeof(int32_t), 1, f);
-
-    // placeholder for other two data members
+    fwrite(&h.stepCount, sizeof(int32_t), 1, f);
+    fwrite(&h.indexOffset, sizeof(int64_t), 1, f);
 }
 
 // resolve.bin - bookkeeping
@@ -201,12 +197,9 @@ struct PendingPatch
     string targetFuncName;
 };
 
-
-
 // PASS 0x0: READING source.bin + VALIDITY CHECK
 bool readSourceLine(ifstream &in, string &out)
 {
-    // reads the next nonblank line
     while (getline(in, out)) {
         if (!out.empty() && out.back() == '\r') {
             out.pop_back();
@@ -219,7 +212,6 @@ bool readSourceLine(ifstream &in, string &out)
 }
 string firstWord(const string &line)
 {
-    // returns first word from the input string
     stringstream ss(line);
     string s = "";
     if (ss >> s) {
@@ -229,7 +221,6 @@ string firstWord(const string &line)
 }
 string secondWord(const string &line)
 {
-    // returns the second word
     stringstream ss(line);
     string s1 = "", s2 = "";
     if (ss >> s1 && ss >> s2) {
@@ -239,7 +230,6 @@ string secondWord(const string &line)
 }
 bool validateProgram(const char *sourcePath)
 {
-    // for each func defined there should be exactly one func_end and no nested funcs allowed - 
     ifstream fin(sourcePath);
     if (!fin.is_open()) {
         return false;
@@ -263,9 +253,9 @@ bool validateProgram(const char *sourcePath)
             st.pop();
         }
         else {
-           if(st.isEmpty()){
-              return false;
-           }
+            if (st.isEmpty()) {
+                return false;
+            }
         }
     }
     return flag && st.isEmpty();
@@ -274,8 +264,6 @@ bool validateProgram(const char *sourcePath)
 // PASS 0x1: RESOLVE() -> resolve.bin
 int64_t writeResolveRecord(FILE *f, int64_t offsetField, const string &text)
 {
-    // writes one [offset(8B)][size(4B)][string] record at the current file position
-    // returns this record's own starting byte position
     int32_t len = text.size();
     fwrite(&offsetField, sizeof(int64_t), 1, f);
     fwrite(&len, sizeof(int32_t), 1, f);
@@ -286,7 +274,6 @@ int64_t writeResolveRecord(FILE *f, int64_t offsetField, const string &text)
 }
 int64_t readResolveRecord(FILE *f, string &outText)
 {
-    // reads one record at the current position and advances past it, returns the offset field - the raw line text comes back untouched in outText.
     int64_t offset = 0;
     int32_t len = 0;
     if (fread(&offset, sizeof(int64_t), 1, f) != 1) {
@@ -308,79 +295,75 @@ int64_t resolveProgram(const char *sourcePath, const char *resolveBinPath)
 {
     FuncEntry funcArray[MAX_FUNCS];
     int32_t funcCount = 0;
-    PendingPatch patches[MAX_PATCHES];
-    int32_t patchCount = 0;
-    // Every source line becomes one record holding the raw line, as-is.
-    // resolve() only PEEKS at the leading word(s) -- enough to spot FUNC
-    // (remember its position) and CALL (remember which function it needs
-    // and where its offset field sits).
-    // Once the whole file is written, every CALL's offset field is patched
-    // with its target's position. Patching happens after the full write
-    // Returns the byte offset of main's FUNC header record.
-    // if there is no main return the error 
 
     ifstream read(sourcePath);
     if (!read.is_open()) {
         return -1;
     }
-    int64_t runningOffset = 0;
+    int64_t OffsetNow = 0;
     string line;
     while (readSourceLine(read, line)) {
-        string kw = firstWord(line);
-        if (kw == "func") {
+        string wd = firstWord(line);
+        if (wd == "func") {
             if (funcCount < MAX_FUNCS) {
                 funcArray[funcCount].funcName = secondWord(line);
-                funcArray[funcCount].byteOffsetInResolveBin = runningOffset;
+                funcArray[funcCount].byteOffsetInResolveBin = OffsetNow;
                 funcCount++;
             }
         }
         int32_t len = line.size();
-        runningOffset += (8 + 4 + len);
+        OffsetNow += (8 + 4 + len);
     }
-    read.close();
-    int64_t mainOffset = -1;
+    int64_t OffsetMain = -1;
     for (int32_t i = 0; i < funcCount; i++) {
         if (funcArray[i].funcName == "main") {
-            mainOffset = funcArray[i].byteOffsetInResolveBin;
+            OffsetMain = funcArray[i].byteOffsetInResolveBin;
             break;
         }
     }
-    if (mainOffset == -1) {
+    if (OffsetMain == -1) {
+        read.close();
         return -1;
     }
     ifstream read1(sourcePath);
-    if (!finB.is_open()) {
+    if (!read1.is_open()) {
+        read.close();
         return -1;
     }
     FILE *fout = fopen(resolveBinPath, "wb");
     if (!fout) {
-        finB.close();
+        read.close();
+        read1.close();
         return -1;
     }
-    while (readSourceLine(finB, line)) {
-        string kw = firstWord(line);
-        int64_t targetOffset = 0;
-        if (kw == "call") {
-            string targetName = secondWord(line);
-            bool found = false;
-            for (int32_t i = 0; i < funcCount; i++) {
-                if (funcArray[i].funcName == targetName) {
-                    targetOffset = funcArray[i].byteOffsetInResolveBin;
-                    found = true;
+    while (readSourceLine(read1, line)) {
+        string wd = firstWord(line);
+        int64_t TargetOffset = 0;
+        if (wd == "call") {
+            string TargetName = secondWord(line);
+            bool flag = false;
+            int32_t idx = 0;
+            while (idx < funcCount) {
+                if (funcArray[idx].funcName == TargetName) {
+                    TargetOffset = funcArray[idx].byteOffsetInResolveBin;
+                    flag = true;
                     break;
                 }
+                idx++;
             }
-            if (!found) {
-                finB.close();
+            if (!flag) {
+                read.close();
+                read1.close();
                 fclose(fout);
                 return -1;
             }
         }
-        writeResolveRecord(fout, targetOffset, line);
+        writeResolveRecord(fout, TargetOffset, line);
     }
-    finB.close();
+    read.close();
+    read1.close();
     fclose(fout);
-    return mainOffset;
+    return OffsetMain;
 }
 
 // PASS 0x2: EXECUTION (tokenization happens here)
@@ -397,10 +380,6 @@ struct Token
 };
 int32_t tokenizeLine(const string &line, Token tokens[], int32_t maxTokens)
 {
-    // first word is always a instruction keyword
-    // instruction set = [func, func_end, call, set, add, sub, mul and div]
-    // next word is identifier like name of a function, variable name
-    // after identifier all are the params/arg, space separated
     stringstream ss(line);
     string word;
     int32_t count = 0;
@@ -421,19 +400,155 @@ int32_t tokenizeLine(const string &line, Token tokens[], int32_t maxTokens)
 }
 Snapshot *buildSnapshot(Stack<Frame> &callStack)
 {
-    // build the snapshot based on the callStack given
     Snapshot *s = new Snapshot();
     s->stackDepth = callStack.snapshot_into(s->callStack, MAX_STACK_DEPTH);
     return s;
 }
+
+int32_t getVarValue(Stack<Frame> &callStack, const string &name)
+{
+    Frame &cur = callStack.peek();
+    for (int32_t i = 0; i < cur.argc; i++) {
+        if (cur.argv[i].name == name) {
+            return cur.argv[i].value;
+        }
+    }
+    for (int32_t i = 0; i < cur.localCount; i++) {
+        if (cur.locals[i].name == name) {
+            return cur.locals[i].value;
+        }
+    }
+    return atoi(name.c_str());
+}
+
+void setVarValue(Stack<Frame> &callStack, const string &name, int32_t val)
+{
+    Frame &cur = callStack.peek();
+    for (int32_t i = 0; i < cur.argc; i++) {
+        if (cur.argv[i].name == name) {
+            cur.argv[i].value = val;
+            return;
+        }
+    }
+    for (int32_t i = 0; i < cur.localCount; i++) {
+        if (cur.locals[i].name == name) {
+            cur.locals[i].value = val;
+            return;
+        }
+    }
+    if (cur.localCount < MAX_VARS_PER_FRAME) {
+        cur.locals[cur.localCount].name = name;
+        cur.locals[cur.localCount].value = val;
+        cur.localCount++;
+    }
+}
+
+void jumpToOffset(FILE *&f, const char *path, int64_t targetOffset, string &outLine)
+{
+    fclose(f);
+    f = fopen(path, "rb");
+    int64_t current = 0;
+    while (readResolveRecord(f, outLine) != -1) {
+        if (current == targetOffset) {
+            break;
+        }
+        current += (8 + 4 + (int32_t)outLine.size());
+    }
+}
+
 void executeProgram(const char *resolveBinPath, int64_t mainOffset, Timeline &timeline)
 {
-    // initialize the call stack
-    // make the main frame
-    // push main frame on the call stack
+    FILE *f = fopen(resolveBinPath, "rb");
+    if (!f) {
+        return;
+    }
+    Stack<Frame> callStack;
+    string ln;
+    jumpToOffset(f, resolveBinPath, mainOffset, ln);
 
-    // implementation:
-    // execute line by line, and according to the keyword perform action
+    Frame mainFrame;
+    mainFrame.func_name = "main";
+    mainFrame.argc = 0;
+    mainFrame.localCount = 0;
+    mainFrame.returnLine = -1;
+    callStack.push(mainFrame);
+
+    Token tokens[MAX_TOKENS];
+    while (!callStack.isEmpty()) {
+        int64_t callTarget = readResolveRecord(f, ln);
+        if (callTarget == -1 && ln.empty()) {
+            break;
+        }
+        int32_t tokenCount = tokenizeLine(ln, tokens, MAX_TOKENS);
+        if (tokenCount == 0) {
+            continue;
+        }
+        string kw = tokens[0].text;
+        if (kw == "set") {
+            int32_t val = getVarValue(callStack, tokens[2].text);
+            setVarValue(callStack, tokens[1].text, val);
+            timeline.record(buildSnapshot(callStack));
+        }
+        else if (kw == "add" || kw == "sub" || kw == "mul" || kw == "div") {
+            int32_t v1 = getVarValue(callStack, tokens[1].text);
+            int32_t v2 = getVarValue(callStack, tokens[2].text);
+            int32_t res = 0;
+
+            if (kw == "add") {
+                res = v1 + v2;
+            }
+            else if (kw == "sub") {
+                res = v1 - v2;
+            }
+            else if (kw == "mul") {
+                res = v1 * v2;
+            }
+            else if (kw == "div" && v2 != 0) {
+                res = v1 / v2;
+            }
+            setVarValue(callStack, tokens[1].text, res);
+            timeline.record(buildSnapshot(callStack));
+        }
+        else if (kw == "call") {
+            Frame child;
+            child.func_name = tokens[1].text;
+            child.argc = 0;
+            child.localCount = 0;
+            child.returnLine = ftell(f);
+
+            for (int32_t i = 2; i < tokenCount && child.argc < MAX_VARS_PER_FRAME; i++) {
+                child.argv[child.argc].value = getVarValue(callStack, tokens[i].text);
+                child.argc++;
+            }
+
+            string targetLn;
+            jumpToOffset(f, resolveBinPath, callTarget, targetLn);
+
+            Token defTokens[MAX_TOKENS];
+            int32_t defCount = tokenizeLine(targetLn, defTokens, MAX_TOKENS);
+            for (int32_t i = 2; i < defCount && (i - 2) < child.argc; i++) {
+                child.argv[i - 2].name = defTokens[i].text;
+            }
+
+            callStack.push(child);
+            timeline.record(buildSnapshot(callStack));
+        }
+        else if (kw == "func_end") {
+            Frame returningFrame = callStack.pop();
+            int64_t retPos = returningFrame.returnLine;
+            if (!callStack.isEmpty() && retPos != -1) {
+                fclose(f);
+                f = fopen(resolveBinPath, "rb");
+                int64_t current = 0;
+                string retLine;
+                while (current < retPos && readResolveRecord(f, retLine) != -1) {
+                    current += (8 + 4 + (int32_t)retLine.size());
+                }
+                timeline.record(buildSnapshot(callStack));
+            }
+        }
+    }
+    fclose(f);
 }
 
 // PASS 0x3: SERIALIZE TIMELINE
@@ -445,10 +560,10 @@ void writeTdbg(Timeline &timeline, const char *tdbgPath)
     // after timeline add the index array i the file
     // update the header
 }
+
 // main section
 int32_t main()
 {
-
     if (!validateProgram("source.bin"))
     {
         // send an error response instead of a .tdbg file
