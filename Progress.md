@@ -12,3 +12,9 @@ Chauthe commit mein Stage 1 validation ki for C-- program, jisme **readSourceLin
 
 ### Commit 5
 panchve commit mein sab se pehlay hamny **readRoseolveRecord** and **writeResolveRecord** ka function banaya jin ka maqsad offsets ko write karna hai aur readResolveRecord ka kaam offsets read karna and and debugger ko ye batana hai ke call ka keyword aye to kidhr jump karna hai. Isky ilawa hamny **resolveProgram** ka function likha hai jiska maqsad har instruction ka offset save karna hai aur jab koi call instruction aye to usy usky ofset ke sath link karna hai.
+
+### Commit 6
+chahte commit ke ander hamneStage 3 implement kiya, jisme **tokenize** function ke zariye code lines ko parse kiya gaya aur instructions ko step-by-step execute karne ka logic banaya gaya. Sath hi call stack manage kiya aur har instruction execution ke baad program state capture karke doubly linked list ko use karty hue Timeline me snapshot store karne ka feature add kiya.
+
+### Commit 7 
+stave commit ke andar hamne Stage 4 banaya, jisme writeHeader aur writeTdbg functions ke zariye poori execution timeline ko custom .tdbg file me serialize kiya gaya. Isme fixed TTDBHeader, snapshots ka stream, aur seeking ke liye byte offsets ka index disk par write kiya gaya hai.   
