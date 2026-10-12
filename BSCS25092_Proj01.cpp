@@ -7,16 +7,18 @@
 //   3. Pass 0X2   -- execute resolve.bin: tokenize ONE line at a time, update the call stack, take a snapshot -> Timeline
 //   4. Pass 0X3   -- serialize Timeline -> session.tdbg(header + snapshot records + dense index)
 
-
+#define _CRT_SECURE_NO_WARNINGS
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <cstdint>
 #include <fstream>
-#include <unistd.h>
-#include <sys/socket.h>
 #include <cstdio>
 #include <cstdlib>
+#ifndef _WIN32
+    #include <unistd.h>
+    #include <sys/socket.h>
+#endif
 using namespace std;
 
 // ---- Constants ----
@@ -554,11 +556,68 @@ void executeProgram(const char *resolveBinPath, int64_t mainOffset, Timeline &ti
 // PASS 0x3: SERIALIZE TIMELINE
 void writeTdbg(Timeline &timeline, const char *tdbgPath)
 {
-    // placeholder for header
-    // index array of the size of stepcount from the timeline
-    // placing each snapshot in the file while maintaining the index(starting point of each nth snapshot)
-    // after timeline add the index array i the file
-    // update the header
+    FILE *fout = fopen(tdbgPath, "wb");
+    if (!fout) {
+        return;
+    }
+    int32_t stepCount = timeline.getStepCount();
+    TTDBHeader header;
+    header.magic[0] = 'T';
+    header.magic[1] = 'T';
+    header.magic[2] = 'D';
+    header.magic[3] = 'B';
+    header.version = 1;
+    header.stepCount = stepCount;
+    header.indexOffset = 0;
+    writeHeader(fout, header);
+    int64_t *indexOffsets = new int64_t[stepCount > 0 ? stepCount : 1];
+    int32_t stepIdx = 0;
+    TimelineNode *curr = timeline.begin();
+    while (curr != nullptr && stepIdx < stepCount) {
+        indexOffsets[stepIdx++] = ftell(fout);
+        Snapshot *s = curr->data;
+        int32_t depth = s->stackDepth;
+        fwrite(&depth, sizeof(int32_t), 1, fout);
+
+        for (int32_t i = 0; i < depth; i++) {
+            const Frame &fr = s->callStack[i];
+            int32_t nameLen = (int32_t)fr.func_name.size();
+            fwrite(&nameLen, sizeof(int32_t), 1, fout);
+            if (nameLen > 0) {
+                fwrite(fr.func_name.data(), sizeof(char), nameLen, fout);
+            }
+            fwrite(&fr.returnLine, sizeof(int32_t), 1, fout);
+            fwrite(&fr.argc, sizeof(int32_t), 1, fout);
+            for (int32_t a = 0; a < fr.argc; a++) {
+                int32_t argNameLen = (int32_t)fr.argv[a].name.size();
+                fwrite(&argNameLen, sizeof(int32_t), 1, fout);
+                if (argNameLen > 0) {
+                    fwrite(fr.argv[a].name.data(), sizeof(char), argNameLen, fout);
+                }
+                fwrite(&fr.argv[a].value, sizeof(int32_t), 1, fout);
+            }
+            fwrite(&fr.localCount, sizeof(int32_t), 1, fout);
+            for (int32_t l = 0; l < fr.localCount; l++) {
+                int32_t locNameLen = (int32_t)fr.locals[l].name.size();
+                fwrite(&locNameLen, sizeof(int32_t), 1, fout);
+                if (locNameLen > 0) {
+                    fwrite(fr.locals[l].name.data(), sizeof(char), locNameLen, fout);
+                }
+                fwrite(&fr.locals[l].value, sizeof(int32_t), 1, fout);
+            }
+        }
+
+        curr = curr->next;
+    }
+    int64_t indexStart = ftell(fout);
+    if (stepCount > 0) {
+        fwrite(indexOffsets, sizeof(int64_t), stepCount, fout);
+    }
+    delete[] indexOffsets;
+    header.indexOffset = indexStart;
+    fseek(fout, 0, SEEK_SET);
+    writeHeader(fout, header);
+    fclose(fout);
 }
 
 // main section

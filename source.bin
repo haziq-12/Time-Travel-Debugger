@@ -1,8 +1,9 @@
-func foo b
-set a 10
-add b a
+func addNumbers a b
+set res a
+add res b
 func_end
 func main
-set k 10
-call foo k
+set x 10
+set y 20
+call addNumbers x y
 func_end
